@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>shortssaver — download with clarity</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 2rem;
+      background-color: #0d0d0d;
+      color: #e0e0e0;
+      font-family: 'JetBrains Mono', monospace;
+      text-align: center;
+    }
+    input {
+      padding: 0.8rem;
+      width: 90%;
+      max-width: 400px;
+      border: none;
+      border-radius: 5px;
+      background-color: #1a1a1a;
+      color: #fff;
+      font-size: 1rem;
+    }
+    button {
+      margin-top: 1rem;
+      padding: 0.7rem 1.5rem;
+      border: none;
+      border-radius: 5px;
+      background-color: #00ffd0;
+      color: #000;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .video-row {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 1rem;
+    }
+    .video-row p {
+      margin: 0.3rem 0;
+    }
+    .hidden {
+      display: none;
+    }
+    .video-table {
+      display: flex;
+      flex-direction: column;
+      margin-top: 2rem;
+    }
+    .video-table div {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.5rem 1rem;
+    }
+    .video-table div:nth-child(odd) {
+      background-color: #111;
+    }
+  </style>
+</head>
+<body>
+  <h1>download a youtube short</h1>
+  <input type="text" id="urlInput" placeholder="paste youtube shorts or channel link..." />
+  <br />
+  <button onclick="handleLink()">go</button>
+
+  <div id="loader">⏳ loading...</div>
+
+  <div id="result" class="video-row hidden">
+    <img id="thumbnail" style="max-width:300px;border-radius:8px;" />
+    <p id="meta"></p>
+    <button onclick="downloadDirect(currentVideoUrl, currentVideoTitle)">⬇️ download video</button>
+  </div>
+
+  <div id="bulkResult" class="video-table hidden"></div>
+  <button id="bulkDownloadBtn" class="hidden" onclick="downloadAll()">⬇️ download all</button>
+
+  <script>
+    let currentVideoUrl = '';
+    let currentVideoTitle = '';
+
+    function downloadDirect(url, title) {
+      fetch('/api/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      })
+      .then(res => res.blob())
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = (title || 'short') + '.mp4';
+        a.click();
+      });
+    }
+
+    async function handleLink() {
+      const url = document.getElementById('urlInput').value;
+      if (!url) return;
+
+      document.getElementById('loader').style.display = 'block';
+      document.getElementById('result').classList.add('hidden');
+      document.getElementById('bulkResult').classList.add('hidden');
+      document.getElementById('bulkDownloadBtn').classList.add('hidden');
+
+      const isChannel = url.includes('/shorts') && url.includes('@');
+
+      if (isChannel) {
+        const res = await fetch('/api/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+        const data = await res.json();
+        const bulkDiv = document.getElementById('bulkResult');
+        bulkDiv.innerHTML = '';
+
+        data.videos.forEach(v => {
+          const row = document.createElement('div');
+          row.innerHTML = `<span>${v.title}</span><button onclick="downloadDirect('${v.url}', '${v.title}')">⬇</button>`;
+          bulkDiv.appendChild(row);
+        });
+
+        document.getElementById('loader').style.display = 'none';
+        bulkDiv.classList.remove('hidden');
+        document.getElementById('bulkDownloadBtn').classList.remove('hidden');
+
+      } else {
+        const res = await fetch('/api/info', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+        const data = await res.json();
+
+        if (!data.download_url) {
+          document.getElementById('loader').innerText = '⚠️ failed to fetch';
+          return;
+        }
+
+        currentVideoUrl = url;
+        currentVideoTitle = data.title;
+
+        document.getElementById('thumbnail').src = data.thumbnail;
+        document.getElementById('meta').innerText = `▶ ${data.title} | ⏱ ${data.duration} | 👁 ${data.views}`;
+
+        document.getElementById('loader').style.display = 'none';
+        document.getElementById('result').classList.remove('hidden');
+      }
+    }
+
+    async function downloadAll() {
+      const buttons = document.querySelectorAll('#bulkResult button');
+      for (let btn of buttons) {
+        btn.click();
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+  </script>
+</body>
+</html>
